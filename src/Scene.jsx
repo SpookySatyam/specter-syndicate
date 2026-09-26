@@ -104,8 +104,15 @@ function HunterManager() {
       }
     }
     
-    // Cap at available routes
-    targetCount = Math.min(targetCount, PATROL_ROUTES.length);
+    // Add 1 extra hunter every 45 seconds beyond the end of the schedule for endless scaling
+    const lastSchedule = config.schedule[config.schedule.length - 1];
+    if (gameState.survivalTime > lastSchedule.time) {
+      const extraTime = gameState.survivalTime - lastSchedule.time;
+      targetCount += Math.floor(extraTime / 45);
+    }
+    
+    // Cap at a reasonable maximum to maintain performance
+    targetCount = Math.min(targetCount, 20);
     pendingCountRef.current = targetCount;
 
     // ---- Global Shadow Ranking Pass ----
@@ -193,7 +200,7 @@ function HunterManager() {
   return (
     <>
       {Array.from({ length: activeCount }).map((_, i) => (
-        <Hunter key={`hunter-${i}`} id={`hunter-${i}`} patrolPoints={PATROL_ROUTES[i]} speedMult={speedMult} />
+        <Hunter key={`hunter-${i}`} id={`hunter-${i}`} patrolPoints={PATROL_ROUTES[i % PATROL_ROUTES.length]} speedMult={speedMult} />
       ))}
     </>
   );

@@ -18,11 +18,15 @@ export default function HealthPack({ index, position }) {
       // Gentle bob and rotate
       groupRef.current.rotation.y += delta;
       groupRef.current.position.y = 0.5 + Math.sin(state.clock.elapsedTime * 2 + phaseOffset.current) * 0.15;
+      
+      const targetPos = gameState.healthPackPositions[index];
+      groupRef.current.position.x = targetPos[0];
+      groupRef.current.position.z = targetPos[1];
     }
   });
 
   return (
-    <group ref={groupRef} position={[position[0], 0.5, position[1]]}>
+    <group ref={groupRef} position={[gameState.healthPackPositions[index][0], 0.5, gameState.healthPackPositions[index][1]]}>
       <Box args={[0.2, 0.6, 0.2]} castShadow>
         <meshStandardMaterial color="#3bff6e" emissive="#3bff6e" emissiveIntensity={0.8} />
       </Box>

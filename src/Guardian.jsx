@@ -77,6 +77,12 @@ export default function Guardian() {
           isTelegraphing.current = false;
           telegraphTimer.current = 0;
           attackCooldownRef.current = 1.5;
+          
+          if (dist < 8.0) {
+            gameState.health -= 30;
+            gameState.health = Math.max(0, gameState.health);
+            gameState.notify();
+          }
         }
       }
     } else {

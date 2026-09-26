@@ -95,12 +95,13 @@ export default function Hunter({ id, patrolPoints, speedMult = 1.0 }) {
   // --- Hit flash ---
   const flashTimer = useRef(0);
 
-  // --- Stuck/Rebound ---
+  // --- Stuck/Rebound/Respawn ---
   const stuckTimer = useRef(0);
   const hardStuckTimer = useRef(0);
   const reboundDir = useRef({ x: 0, z: 0 });
   const reboundTimer = useRef(0);
   const ghostModeTimer = useRef(0);
+  const respawnTimer = useRef(0);
 
   // Spotlight target — imperative Object3D added directly to the scene
   const targetObj = useMemo(() => new THREE.Object3D(), []);
@@ -137,17 +138,38 @@ export default function Hunter({ id, patrolPoints, speedMult = 1.0 }) {
 
     const pos = groupRef.current.position;
 
-    // ------ Defeat animation: scale down and disable ------
+    // ------ Defeat animation: scale down and disable, then respawn ------
     if (defeatedRef.current || hunterState.states[id] === 'defeated') {
       defeatedRef.current = true;
       hunterState.states[id] = 'defeated';
       hunterState.detections[id] = false;
       hunterState.contacts[id] = false;
-      spotRef.current.intensity = 0;
+      if (spotRef.current) spotRef.current.intensity = 0;
 
       if (scaleRef.current > 0.01) {
         scaleRef.current = Math.max(0, scaleRef.current - DEFEAT_SCALE_SPEED * delta);
         groupRef.current.scale.setScalar(scaleRef.current);
+      } else {
+        respawnTimer.current += delta;
+        if (respawnTimer.current > 15) { // Respawn after 15 seconds
+          healthRef.current = HUNTER_MAX_HEALTH;
+          defeatedRef.current = false;
+          stateRef.current = 'patrol';
+          hunterState.states[id] = 'patrol';
+          if (spotRef.current) spotRef.current.intensity = 2.5;
+          respawnTimer.current = 0;
+          waypointIndex.current = 0;
+          
+          const startPos = patrolPoints[0];
+          pos.x = startPos[0];
+          pos.z = startPos[1];
+          pos.y = getTerrainHeight(pos.x, pos.z) + 0.5;
+          
+          const nextPos = patrolPoints.length > 1 ? patrolPoints[1] : startPos;
+          const initDx = nextPos[0] - startPos[0];
+          const initDz = nextPos[1] - startPos[1];
+          groupRef.current.rotation.y = Math.atan2(-initDx, -initDz);
+        }
       }
       return; // skip all behavior
     }

@@ -89,7 +89,7 @@ export default function Player() {
   const isJumping = useRef(false);
 
   // ---- Health Packs ----
-  const healthPackTimers = useRef(HEALTH_PACK_POSITIONS.map(() => 0));
+  const healthPackTimers = useRef(gameState.healthPacks.map(() => 0));
 
   // ---- Stuck/Rebound ----
   const stuckTimer = useRef(0);
@@ -100,6 +100,10 @@ export default function Player() {
 
   // ---- Health tracking (ref for per-frame precision) ----
   const health = useRef(100);
+  const regenTimer = useRef(0);
+
+  // ---- Smooth Movement state ----
+  const currentVelocity = useRef({ x: 0, z: 0 });
 
   /**
    * Throttle bookkeeping: we only push updates to gameState (triggering HUD
@@ -176,6 +180,13 @@ export default function Player() {
     // Grab position ref early so it's available everywhere in this frame
     const pos = groupRef.current.position;
 
+    // ---- External Health Sync ----
+    // If Guardian or gameState reset modified health, sync it here
+    if (gameState.health !== lastSyncedHealth.current) {
+      health.current = gameState.health;
+      lastSyncedHealth.current = gameState.health;
+    }
+
     // ---- Damage & detection ----
     const detected = hunterState.isPlayerDetected();
     const inContact = hunterState.isPlayerInContact();
@@ -192,17 +203,37 @@ export default function Player() {
       health.current = Math.max(0, health.current);
     }
     
+    // ---- Auto Health Regeneration ----
+    if (!detected && !inContact && health.current > 0 && health.current < 100) {
+      regenTimer.current += delta;
+      if (regenTimer.current > 5.0) { // 5 second delay out of combat before healing starts
+        health.current += 3 * delta; // Much slower: 3 HP per second
+        health.current = Math.min(100, health.current);
+      }
+    } else {
+      regenTimer.current = 0;
+    }
+    
     // ---- Health Pack Pickup & Respawn ----
-    for (let i = 0; i < HEALTH_PACK_POSITIONS.length; i++) {
+    for (let i = 0; i < gameState.healthPacks.length; i++) {
       if (!gameState.healthPacks[i]) {
         // Cooldown check (20 seconds)
         if (state.clock.elapsedTime - healthPackTimers.current[i] > 20) {
           gameState.healthPacks[i] = true;
+          
+          // Generate a random position for the medi kit
+          let rx, rz;
+          do {
+            rx = (Math.random() * 2 - 1) * 15;
+            rz = (Math.random() * 2 - 1) * 15;
+          } while (checkObstacleCollision(rx, rz, gameState.level, 1.0));
+          
+          gameState.healthPackPositions[i] = [rx, rz];
         }
       } else if (health.current > 0 && health.current < 100) {
         // Distance check
-        const hx = HEALTH_PACK_POSITIONS[i][0];
-        const hz = HEALTH_PACK_POSITIONS[i][1];
+        const hx = gameState.healthPackPositions[i][0];
+        const hz = gameState.healthPackPositions[i][1];
         const dhx = pos.x - hx;
         const dhz = pos.z - hz;
         if (dhx * dhx + dhz * dhz < 1.0) { // roughly 1.0 units distance squared
@@ -463,8 +494,8 @@ export default function Player() {
     if (keys.current.held.has('a') || keys.current.held.has('arrowleft')) rawX -= 1;
     if (keys.current.held.has('d') || keys.current.held.has('arrowright')) rawX += 1;
 
-    let moveX = 0;
-    let moveZ = 0;
+    let targetMoveX = 0;
+    let targetMoveZ = 0;
     const len = Math.sqrt(rawX * rawX + rawZ * rawZ);
     if (len > 0) {
       gameState.hasMoved = true;
@@ -475,14 +506,24 @@ export default function Player() {
       // S / Down  = (+0.707, +0.707) screen down
       // A / Left  = (-0.707, +0.707) screen left
       // D / Right = (+0.707, -0.707) screen right
-      moveX = (normX + normZ) * 0.7071;
-      moveZ = (-normX + normZ) * 0.7071;
+      targetMoveX = (normX + normZ) * 0.7071;
+      targetMoveZ = (-normX + normZ) * 0.7071;
     }
+
+    // Apply exponential smoothing for acceleration/deceleration
+    const smoothRate = len > 0 ? 12 : 20; // 12 for accel, 20 for friction
+    const lerpFactor = 1 - Math.exp(-smoothRate * delta);
+    currentVelocity.current.x += (targetMoveX - currentVelocity.current.x) * lerpFactor;
+    currentVelocity.current.z += (targetMoveZ - currentVelocity.current.z) * lerpFactor;
+
+    const moveX = currentVelocity.current.x;
+    const moveZ = currentVelocity.current.z;
+    const currentLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
 
     // ---- Stealth Mode Special Ability: shadowBlend ----
     // Explicit on/off boolean assignment every frame (never stuck on)
     const isStealthMode = currentMode.current.key === 'purple';
-    const shadowBlendActive = isStealthMode && len === 0;
+    const shadowBlendActive = isStealthMode && currentLen < 0.05;
     playerState.shadowBlend = shadowBlendActive;
 
     if (shadowBlendActive && health.current > 0 && !detected && !inContact) {
@@ -583,7 +624,7 @@ export default function Player() {
     }
 
     // Footstep squash/stretch and skirt animation
-    const speedBonus = len > 0 ? 0.05 : 0;
+    const speedBonus = currentLen > 0.01 ? 0.05 : 0;
     skirtRefs.current.forEach((ref, i) => {
       if (ref) {
         const baseY = -0.45 + (i % 2 === 0 ? 0.05 : 0);
@@ -592,7 +633,7 @@ export default function Player() {
     });
 
     if (!isJumping.current) {
-      if (len > 0) {
+      if (currentLen > 0.01) {
         walkPhase.current += currentSpeed * delta * 2;
         meshRef.current.scale.y = 1.15 + Math.sin(walkPhase.current) * 0.15;
       } else {

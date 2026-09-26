@@ -8,13 +8,28 @@
  */
 
 import abilitySystem from './abilitySystem';
+import { checkObstacleCollision } from './levelGeometry';
 
 const listeners = new Set();
+
+function generateRandomHealthPackPositions(level) {
+  const positions = [];
+  for (let i = 0; i < 4; i++) {
+    let rx, rz;
+    do {
+      rx = (Math.random() * 2 - 1) * 15;
+      rz = (Math.random() * 2 - 1) * 15;
+    } while (checkObstacleCollision(rx, rz, level, 1.0));
+    positions.push([rx, rz]);
+  }
+  return positions;
+}
 
 const gameState = {
   health: 100,
   maxHealth: 100,
   healthPacks: [true, true, true, true],
+  healthPackPositions: generateRandomHealthPackPositions(1),
   healPulse: 0,
   survivalTime: 0,
   detected: false,
@@ -187,6 +202,16 @@ const gameState = {
   reset(full = true) {
     this.health = 100;
     this.healthPacks = [true, true, true, true];
+    
+    if (full) {
+      this.mode = 'purple';
+      this.modeColor = '#a63bff';
+      this.modeName = 'Stealth';
+      this.level = 1;
+    }
+    
+    this.healthPackPositions = generateRandomHealthPackPositions(this.level);
+    
     this.healPulse = 0;
     this.survivalTime = 0;
     this.detected = false;
@@ -228,12 +253,6 @@ const gameState = {
     this.scorePopups = [];
     this.currentObjectiveStep = 1;
     this.objectivesCompleted = { 1: false, 2: false, 3: false, 4: false };
-    if (full) {
-      this.mode = 'purple';
-      this.modeColor = '#a63bff';
-      this.modeName = 'Stealth';
-      this.level = 1;
-    }
     this.syncedSurvivalTime = 0;
     this.hunterCount = 3;
     this.notify();
